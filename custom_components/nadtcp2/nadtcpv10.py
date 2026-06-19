@@ -61,8 +61,7 @@ class NADReceiverTCPC338(asyncio.Protocol):
 
     CMD_MIN_INTERVAL = 0.15
 
-    def __init__(self, host, loop, state_changed_cb=None, reconnect_interval=15, connect_timeout=10):
-        self._loop = loop
+    def __init__(self, host, state_changed_cb=None, reconnect_interval=15, connect_timeout=10):
         self._host = host
         self._state_changed_cb = state_changed_cb
         self._reconnect_interval = reconnect_interval
@@ -127,7 +126,7 @@ class NADReceiverTCPC338(asyncio.Protocol):
         sock.setsockopt(socket.SOL_TCP, socket.TCP_KEEPCNT, 3)
 
         _LOGGER.debug("Connected to %s", self._host)
-        self._loop.create_task(self.exec_command('Main', '?'))
+        asyncio.get_event_loop().create_task(self.exec_command('Main', '?'))
 
     def data_received(self, data):
         data = data.decode('utf-8').replace('\x00', '')
@@ -162,7 +161,7 @@ class NADReceiverTCPC338(asyncio.Protocol):
             self._state_changed_cb(self._state)
 
         if not self._closing:
-            self._loop.create_task(self.connect())
+            asyncio.get_event_loop().create_task(self.connect())
 
     async def connect(self):
         self._closing = False
@@ -170,14 +169,14 @@ class NADReceiverTCPC338(asyncio.Protocol):
         while not self._closing and not self._transport:
             try:
                 _LOGGER.debug("Connecting to %s", self._host)
-                connection = self._loop.create_connection(
+                connection = asyncio.get_event_loop().create_connection(
                     lambda: self, self._host, NADReceiverTCPC338.PORT)
                 await asyncio.wait_for(
                     connection, timeout=self._connect_timeout)
                 return
             except (ConnectionRefusedError, OSError, asyncio.TimeoutError):
                 _LOGGER.exception("Error connecting to %s, reconnecting in %ss", self._host, self._reconnect_interval, exc_info=True)
-                await asyncio.sleep(self._reconnect_interval, loop=self._loop)
+                await asyncio.sleep(self._reconnect_interval)
 
     async def disconnect(self):
         self._closing = True

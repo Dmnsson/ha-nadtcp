@@ -1,19 +1,20 @@
 """Support for NAD digital amplifiers which can be remote controlled via tcp/ip."""
 import logging
 
+from . import get_unique_id
 
 import voluptuous as vol
 
 import homeassistant.helpers.config_validation as cv
 from homeassistant.components.media_player import (
-    MediaPlayerEntity, MediaPlayerEntityFeature, PLATFORM_SCHEMA)
+    MediaPlayerEntity, MediaPlayerEntityFeature, PLATFORM_SCHEMA, MediaPlayerDeviceClass)
 
 from homeassistant.const import (
     CONF_NAME, STATE_OFF, STATE_ON, STATE_UNKNOWN, STATE_UNAVAILABLE,
     EVENT_HOMEASSISTANT_START, EVENT_HOMEASSISTANT_STOP)
 
 from homeassistant.helpers.dispatcher import (
-    async_dispatcher_connect, dispatcher_send)
+    async_dispatcher_connect, async_dispatcher_send)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -32,7 +33,6 @@ SUPPORT_NAD = (
     | MediaPlayerEntityFeature.TURN_OFF
     | MediaPlayerEntityFeature.VOLUME_STEP
     | MediaPlayerEntityFeature.SELECT_SOURCE
-
 )
 
 CONF_MIN_VOLUME = 'min_volume'
@@ -53,13 +53,18 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
 
 async def async_setup_platform(hass, config, async_add_entities, discovery_info=None):
     """Setup the NAD platform."""
+    host = config.get(CONF_HOST)
+    name = config.get(CONF_NAME)
+    unique_id = get_unique_id(host)
+
     async_add_entities([NADEntity(
-        config.get(CONF_NAME),
-        config.get(CONF_HOST),
+        name,
+        host,
         config.get(CONF_RECONNECT_INTERVAL),
         config.get(CONF_MIN_VOLUME),
         config.get(CONF_MAX_VOLUME),
         config.get(CONF_VOLUME_STEP),
+        unique_id
     )])
 
     return True
@@ -68,7 +73,9 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
 class NADEntity(MediaPlayerEntity):
     """Entity handler for the NAD protocol"""
 
-    def __init__(self, name, host, reconnect_interval, min_volume, max_volume, volume_step):
+    _attr_device_class = MediaPlayerDeviceClass.RECEIVER
+
+    def __init__(self, name, host, reconnect_interval, min_volume, max_volume, volume_step, unique_id=None):
         """Initialize the entity properties"""
         self._client = None
         self._name = name
@@ -77,6 +84,7 @@ class NADEntity(MediaPlayerEntity):
         self._min_vol = min_volume
         self._max_vol = max_volume
         self._volume_step = volume_step
+        self._attr_unique_id = unique_id
 
         self._state = STATE_UNKNOWN
         self._muted = None
@@ -112,14 +120,16 @@ class NADEntity(MediaPlayerEntity):
         return self._name
 
     @property
-    def state(self):
-        """Return the state of the entity."""
-        return self._state
-    
-    @property
     def icon(self):
         """Return the icon for the device."""
         return "mdi:speaker-multiple"
+
+    @property
+    def state(self):
+        """Return the state of the entity."""
+        if self._client is None:
+            return STATE_UNKNOWN
+        return self._state
 
     @property
     def source(self):
@@ -129,21 +139,29 @@ class NADEntity(MediaPlayerEntity):
     @property
     def source_list(self):
         """List of available input sources."""
+        if self._client is None:
+            return []
         return self._client.available_sources()
-    
+
     @property
     def available(self):
         """Return if device is available."""
+        if self._client is None:
+            return False
         return self._state is not STATE_UNKNOWN
 
     @property
     def volume_level(self):
         """Volume level of the media player (0..1)."""
+        if self._client is None or self._volume is None:
+            return 0.0
         return self._volume
 
     @property
     def is_volume_muted(self):
         """Boolean if volume is currently muted."""
+        if self._client is None or self._muted is None:
+            return False
         return self._muted
 
     @property
@@ -187,7 +205,7 @@ class NADEntity(MediaPlayerEntity):
             CMD_POWER, CMD_VOLUME, CMD_MUTE, CMD_SOURCE
 
         def state_changed_cb(state):
-            dispatcher_send(self.hass, SIGNAL_NAD_STATE_RECEIVED, state)
+            async_dispatcher_send(self.hass, SIGNAL_NAD_STATE_RECEIVED, state)
 
         def handle_state_changed(state):
             if CMD_POWER in state:
@@ -211,7 +229,7 @@ class NADEntity(MediaPlayerEntity):
             await self._client.connect()
             self.hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, disconnect)
 
-        self._client = NADReceiverTCPC338(self._host, self.hass.loop,
+        self._client = NADReceiverTCPC338(self._host,
                                           reconnect_interval=self._reconnect_interval,
                                           state_changed_cb=state_changed_cb)
 
@@ -221,4 +239,3 @@ class NADEntity(MediaPlayerEntity):
             await connect(None)
         else:
             self.hass.bus.async_listen_once(EVENT_HOMEASSISTANT_START, connect)
-
