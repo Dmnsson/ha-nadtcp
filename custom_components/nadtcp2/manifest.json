@@ -1,10 +1,10 @@
 {
   "domain": "nadtcp2",
   "name": "NAD C338 integration",
-  "documentation": "https://github.com/Sjoerdfc/ha-nadtcp",
-  "issue_tracker": "https://github.com/Sjoerdfc/ha-nadtcp/issues",
+  "documentation": "https://github.com/dmnsson/ha-nadtcp",
+  "issue_tracker": "https://github.com/dmnsson/ha-nadtcp/issues",
   "requirements": ["getmac"],
   "version": "0.9",
   "dependencies": [],
-  "codeowners": ["@mindigmarton", "Sjoerdfc"]
+  "codeowners": ["@mindigmarton", "Sjoerdfc", "@dmnsson"]
 }
